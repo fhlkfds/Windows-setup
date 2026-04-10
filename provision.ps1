@@ -245,7 +245,11 @@ function Invoke-WindowsUpdates {
         $state.updateCyclesDone = $cycle
         Save-State $state
 
-        $rebootNeeded = (Get-WURebootStatus -Silent -ErrorAction SilentlyContinue).RebootRequired
+        # Check reboot pending via registry -- more reliable than Get-WURebootStatus,
+        # which returns $null (not an object) when no reboot is needed, causing a
+        # "property not found" error if accessed with dot notation.
+        $rebootNeeded = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or
+                        (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
         if ($rebootNeeded) {
             if ($cycle -lt $UpdateMaxCycles) {
                 Invoke-RebootWithContinuation "Applying Windows Updates (completed $cycle of $UpdateMaxCycles cycles)"
