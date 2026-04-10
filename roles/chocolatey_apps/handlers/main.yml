@@ -1,0 +1,7 @@
+# roles/chocolatey_apps/handlers/main.yml
+
+---
+- name: Reboot if required after app install
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+    post_reboot_delay: 30

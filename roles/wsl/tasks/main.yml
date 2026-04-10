@@ -1,0 +1,103 @@
+# roles/wsl/tasks/main.yml
+# Enables WSL (Windows Subsystem for Linux) using the modern wsl --install method.
+#
+# The modern WSL installation (Windows 11) uses 'wsl --install' which:
+#   - Enables the VirtualMachinePlatform feature
+#   - Enables the Microsoft-Windows-Subsystem-Linux feature
+#   - Downloads and installs the WSL kernel
+#   - Sets WSL 2 as the default version
+#   - Optionally installs a default Linux distribution
+#
+# This role uses a hybrid approach:
+#   1. Enable the underlying Windows features via win_optional_feature (idempotent)
+#   2. Use 'wsl --install' for the kernel and distro (handles first-time setup)
+#   3. Detect existing installations to maintain idempotency
+
+---
+- name: WSL | Enable Virtual Machine Platform feature
+  ansible.windows.win_optional_feature:
+    name: VirtualMachinePlatform
+    state: present
+  register: wsl_vmp_result
+
+- name: WSL | Enable Windows Subsystem for Linux feature
+  ansible.windows.win_optional_feature:
+    name: Microsoft-Windows-Subsystem-Linux
+    state: present
+  register: wsl_feature_result
+
+- name: WSL | Reboot if Windows features were just enabled
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+    post_reboot_delay: 60
+    msg: "Rebooting to complete WSL feature installation."
+  when: wsl_vmp_result is changed or wsl_feature_result is changed
+
+- name: WSL | Check if WSL is functional
+  ansible.windows.win_shell: |
+    try {
+        $status = wsl --status 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Output "functional"
+        } else {
+            Write-Output "not_functional"
+        }
+    } catch {
+        Write-Output "not_functional"
+    }
+  register: wsl_status
+  changed_when: false
+  failed_when: false
+
+- name: WSL | Install WSL kernel and set default version
+  ansible.windows.win_shell: wsl --install --no-distribution
+  register: wsl_install_result
+  when: wsl_status.stdout | trim != "functional"
+  # --no-distribution installs just the WSL kernel and platform without
+  # a distro. We install the distro separately for better idempotency.
+
+- name: WSL | Reboot after WSL kernel installation
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+    post_reboot_delay: 60
+  when: wsl_install_result is changed
+
+- name: WSL | Set WSL 2 as default version
+  ansible.windows.win_shell: wsl --set-default-version 2
+  register: wsl_default_version
+  changed_when: "'operation completed successfully' in wsl_default_version.stdout | lower or 'completed' in wsl_default_version.stdout | lower"
+  failed_when: false
+
+- name: WSL | Check if default distro is already installed
+  ansible.windows.win_shell: |
+    $distros = wsl --list --quiet 2>&1
+    if ($distros -match '{{ wsl_default_distro }}') {
+        Write-Output "installed"
+    } else {
+        Write-Output "not_installed"
+    }
+  register: wsl_distro_check
+  changed_when: false
+  failed_when: false
+
+- name: WSL | Install default Linux distribution ({{ wsl_default_distro }})
+  ansible.windows.win_shell: "wsl --install -d {{ wsl_default_distro }} --no-launch"
+  register: wsl_distro_install
+  when: wsl_distro_check.stdout | trim == "not_installed"
+  # --no-launch prevents the distro from launching interactively after install.
+  # The user will need to launch it manually the first time to complete
+  # initial setup (create username/password).
+  async: 600
+  poll: 30
+
+- name: WSL | Report WSL status
+  ansible.builtin.debug:
+    msg: >-
+      WSL configuration complete.
+      {% if wsl_distro_install is changed %}
+      {{ wsl_default_distro }} has been installed. Launch it from the Start menu
+      to complete initial setup (create a UNIX username and password).
+      {% elif wsl_distro_check.stdout | trim == "installed" %}
+      {{ wsl_default_distro }} was already installed. No changes made.
+      {% endif %}
+      WSL 2 is set as the default version.

@@ -1,0 +1,34 @@
+# roles/windows_updates/tasks/main.yml
+# Installs all available Windows updates with reboot handling.
+#
+# Windows Update often requires multiple passes: installing one batch of
+# updates can unlock further updates that were previously hidden. This role
+# runs update cycles in a loop (up to windows_update_max_cycles) until
+# either no more updates are found or the limit is reached.
+
+---
+- name: "Windows Update | Cycle {{ update_cycle_number }} of {{ windows_update_max_cycles }}"
+  ansible.windows.win_updates:
+    category_names: "{{ windows_update_categories }}"
+    state: installed
+    reboot: "{{ windows_update_auto_reboot }}"
+    reboot_timeout: 1800
+  register: update_result
+  retries: 2
+  delay: 30
+  until: update_result is not failed
+  loop: "{{ range(1, windows_update_max_cycles + 1) | list }}"
+  loop_control:
+    loop_var: update_cycle_number
+  # Each cycle installs all available updates and reboots if needed.
+  # The next cycle picks up any newly-available updates.
+  # We use retries to handle transient WinRM disconnects during reboots.
+  vars:
+    ansible_winrm_operation_timeout_sec: 300
+    ansible_winrm_read_timeout_sec: 360
+
+- name: Windows Update | Check if a final reboot is pending
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+    post_reboot_delay: 60
+  when: update_result.results[-1].reboot_required | default(false)

@@ -1,0 +1,35 @@
+# roles/chocolatey_apps/tasks/main.yml
+# Installs applications using Chocolatey package manager.
+#
+# Chocolatey is the preferred package manager here because:
+# - It has mature Ansible integration via the win_chocolatey module
+# - It handles silent installs, dependencies, and PATH configuration
+# - It supports idempotent state management (present/absent/latest)
+# - WinGet's Ansible integration is less mature and harder to make idempotent
+#
+# The role first ensures Chocolatey itself is installed, then installs
+# each package from the chocolatey_packages variable list.
+
+---
+- name: Chocolatey | Ensure Chocolatey is installed
+  chocolatey.chocolatey.win_chocolatey:
+    name: chocolatey
+    state: present
+
+- name: Chocolatey | Install packages
+  chocolatey.chocolatey.win_chocolatey:
+    name: "{{ item.name }}"
+    version: "{{ item.version | default(omit) }}"
+    state: present
+  loop: "{{ chocolatey_packages }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: choco_install_result
+  retries: 2
+  delay: 10
+  until: choco_install_result is not failed
+  notify: Reboot if required after app install
+
+- name: Chocolatey | Display installed packages
+  ansible.builtin.debug:
+    msg: "Installed: {{ chocolatey_packages | map(attribute='name') | join(', ') }}"

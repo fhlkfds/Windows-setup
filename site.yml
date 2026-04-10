@@ -1,0 +1,74 @@
+# site.yml - Main playbook for Windows 11 provisioning
+#
+# Purpose:  Provision a Windows 11 machine from scratch with updates,
+#           applications, browser extensions, dark mode, Hyper-V, and WSL.
+#
+# Target:   Windows 11 Pro or Enterprise
+# Requires: WinRM configured on the target (see README.md)
+#           Ansible 2.15+ with ansible.windows collection
+#           pywinrm on the Ansible control node
+#
+# Usage:
+#   Full run:
+#     ansible-playbook site.yml -i inventory.ini --ask-pass
+#
+#   Run specific sections using tags:
+#     ansible-playbook site.yml -i inventory.ini --ask-pass --tags updates
+#     ansible-playbook site.yml -i inventory.ini --ask-pass --tags apps
+#     ansible-playbook site.yml -i inventory.ini --ask-pass --tags brave_extensions
+#     ansible-playbook site.yml -i inventory.ini --ask-pass --tags darkmode
+#     ansible-playbook site.yml -i inventory.ini --ask-pass --tags hyperv
+#     ansible-playbook site.yml -i inventory.ini --ask-pass --tags wsl
+#
+#   Check mode (dry run):
+#     ansible-playbook site.yml -i inventory.ini --ask-pass --check
+
+---
+- name: Provision Windows 11 workstation
+  hosts: windows
+  gather_facts: true
+
+  pre_tasks:
+    - name: Validate target is Windows
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == "Windows"
+        fail_msg: "This playbook only supports Windows targets. Detected OS family: {{ ansible_os_family }}"
+        success_msg: "Target confirmed as Windows."
+      tags: always
+
+    - name: Display target system info
+      ansible.builtin.debug:
+        msg: >-
+          Target: {{ ansible_hostname }} |
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }} |
+          Architecture: {{ ansible_architecture }}
+      tags: always
+
+  roles:
+    - role: windows_updates
+      tags: updates
+
+    - role: chocolatey_apps
+      tags: apps
+
+    - role: brave_extensions
+      tags: brave_extensions
+
+    - role: dark_mode
+      tags: darkmode
+
+    - role: hyperv
+      tags: hyperv
+
+    - role: wsl
+      tags: wsl
+
+  post_tasks:
+    - name: Final status summary
+      ansible.builtin.debug:
+        msg: >-
+          Provisioning complete for {{ ansible_hostname }}.
+          A reboot may be required for all changes to take full effect.
+          Dark mode changes require a user logout/login to appear.
+      tags: always

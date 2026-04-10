@@ -1,0 +1,90 @@
+# group_vars/windows.yml
+# Variables for all hosts in the [windows] group.
+# Override any of these in host_vars/<hostname>.yml for per-host customization.
+
+---
+# ---------------------------------------------------------------------------
+# Connection defaults (can also be set in inventory or via env vars)
+# ---------------------------------------------------------------------------
+ansible_connection: winrm
+ansible_port: 5986
+ansible_winrm_transport: ntlm
+ansible_winrm_server_cert_validation: ignore
+
+# ---------------------------------------------------------------------------
+# Chocolatey packages to install
+# Each entry is a dict with 'name' (Chocolatey package id) and optional 'version'.
+# To pin a version, add 'version: "x.y.z"'. Otherwise latest is installed.
+# ---------------------------------------------------------------------------
+chocolatey_packages:
+  - name: brave
+  - name: obsidian
+  - name: steam
+  - name: discord
+  - name: tailscale
+  - name: sysinternals
+  - name: powertoys
+  - name: spotify
+
+# ---------------------------------------------------------------------------
+# Brave browser extensions
+# Installed via Chromium enterprise policy (ExtensionInstallForcelist).
+# Each entry needs:
+#   id:   The Chrome Web Store extension ID
+#   name: Human-readable name (for documentation / task output only)
+#
+# The update_url is the Chrome Web Store update endpoint. All extensions
+# from the Chrome Web Store share the same update URL.
+# ---------------------------------------------------------------------------
+brave_extension_update_url: "https://clients2.google.com/service/update2/crx"
+
+brave_extensions:
+  - id: nngceckbapebfimnlniiiahkandclblb
+    name: Bitwarden
+  - id: pnidmkljnhbjfffciajlcpeldoljnidn
+    name: Linkwarden
+  - id: ddkjiahejlhfcafbddmgiahcphecmpfh
+    name: uBlock Origin Lite
+  - id: ldpochfccmkkmhdbclfhpagapcfdljkj
+    name: Decentraleyes
+  - id: cnjifjpddelmedmihgijeibhnjfabmlf
+    name: Obsidian Web Clipper
+  - id: pkehgijcmpdhfbdbbnkijodmdjhbjlgp
+    name: Privacy Badger
+  - id: gebbhagfogifgggkldgodflihgfeippi
+    name: Return YouTube Dislike
+  - id: mnjggcdmjocbbbhaepdhchncahnbgone
+    name: SponsorBlock for YouTube
+  - id: hjdoplcnndgiblooccencgcggcoihigg
+    name: "Terms of Service; Didn't Read"
+  - id: pocpnlppkickgojjlmhdmidojbmbodfm
+    name: Chromebook Recovery Utility
+
+# ---------------------------------------------------------------------------
+# Windows Update settings
+# ---------------------------------------------------------------------------
+# Categories to include in Windows Update. '*' means all categories.
+windows_update_categories:
+  - '*'
+
+# Maximum number of update cycles to run. Windows often requires multiple
+# passes because some updates unlock further updates.
+windows_update_max_cycles: 3
+
+# Whether to automatically reboot when Windows Update requires it.
+windows_update_auto_reboot: true
+
+# Timeout in seconds to wait for a single update cycle to complete.
+windows_update_timeout: 7200
+
+# ---------------------------------------------------------------------------
+# WSL settings
+# ---------------------------------------------------------------------------
+# Default Linux distribution to install with WSL.
+wsl_default_distro: Ubuntu
+
+# ---------------------------------------------------------------------------
+# Dark mode
+# ---------------------------------------------------------------------------
+# Set to true to enable dark mode for both system and apps.
+enable_dark_mode: true

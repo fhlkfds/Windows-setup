@@ -1,0 +1,8 @@
+# roles/hyperv/handlers/main.yml
+
+---
+- name: Reboot after Hyper-V install
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+    post_reboot_delay: 60
+    msg: "Rebooting to complete Hyper-V installation."

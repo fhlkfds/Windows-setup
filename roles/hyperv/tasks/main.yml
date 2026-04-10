@@ -1,0 +1,114 @@
+# roles/hyperv/tasks/main.yml
+# Enables Hyper-V on Windows 11 Pro/Enterprise with hardware capability detection.
+#
+# Hyper-V requirements:
+#   1. Windows 11 Pro, Enterprise, or Education (not Home)
+#   2. 64-bit processor with SLAT (Second Level Address Translation)
+#   3. CPU virtualization support (Intel VT-x / AMD-V) enabled in BIOS
+#   4. Minimum 4 GB RAM
+#
+# This role checks all requirements before attempting to enable Hyper-V.
+# If any requirement is not met, it skips installation with a clear message.
+
+---
+- name: Hyper-V | Detect Windows edition
+  ansible.windows.win_shell: (Get-CimInstance Win32_OperatingSystem).Caption
+  register: win_edition
+  changed_when: false
+
+- name: Hyper-V | Check if edition supports Hyper-V
+  ansible.builtin.set_fact:
+    hyperv_edition_supported: >-
+      {{ win_edition.stdout | lower is search('pro') or
+         win_edition.stdout | lower is search('enterprise') or
+         win_edition.stdout | lower is search('education') }}
+
+- name: Hyper-V | Detect hardware virtualization support
+  ansible.windows.win_shell: |
+    # Check if virtualization is enabled in firmware
+    $cpu = Get-CimInstance Win32_Processor
+    $vmEnabled = $cpu.VirtualizationFirmwareEnabled
+
+    # Check for SLAT support (SecondLevelAddressTranslationExtensions)
+    $slat = $cpu.SecondLevelAddressTranslationExtensions
+
+    # Check RAM (Hyper-V requires minimum 4 GB)
+    $ramGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1)
+    $ramOk = $ramGB -ge 4
+
+    # Return results as JSON for easy parsing
+    @{
+        VirtualizationEnabled = [bool]$vmEnabled
+        SLATSupported         = [bool]$slat
+        RAMSufficient         = [bool]$ramOk
+        RAMGB                 = $ramGB
+    } | ConvertTo-Json
+  register: hyperv_hw_check
+  changed_when: false
+
+- name: Hyper-V | Parse hardware check results
+  ansible.builtin.set_fact:
+    hyperv_hw: "{{ hyperv_hw_check.stdout | from_json }}"
+
+- name: Hyper-V | Report hardware compatibility
+  ansible.builtin.debug:
+    msg: >-
+      Hyper-V hardware check:
+      Edition supported: {{ hyperv_edition_supported }} ({{ win_edition.stdout | trim }})
+      | Virtualization enabled: {{ hyperv_hw.VirtualizationEnabled }}
+      | SLAT supported: {{ hyperv_hw.SLATSupported }}
+      | RAM: {{ hyperv_hw.RAMGB }} GB (minimum 4 GB, sufficient: {{ hyperv_hw.RAMSufficient }})
+
+- name: Hyper-V | Skip if edition is unsupported
+  ansible.builtin.fail:
+    msg: >-
+      Hyper-V requires Windows 11 Pro, Enterprise, or Education.
+      Detected edition: {{ win_edition.stdout | trim }}.
+      Skipping Hyper-V installation.
+  when: not hyperv_edition_supported | bool
+  ignore_errors: true
+  register: hyperv_edition_fail
+
+- name: Hyper-V | Skip if hardware is unsupported
+  ansible.builtin.fail:
+    msg: >-
+      Hyper-V hardware requirements not met.
+      Virtualization firmware: {{ hyperv_hw.VirtualizationEnabled }}
+      SLAT: {{ hyperv_hw.SLATSupported }}
+      RAM: {{ hyperv_hw.RAMGB }} GB.
+      Ensure virtualization is enabled in BIOS/UEFI and hardware supports SLAT.
+  when: >-
+    hyperv_edition_supported | bool and
+    (not hyperv_hw.VirtualizationEnabled | bool or
+     not hyperv_hw.SLATSupported | bool or
+     not hyperv_hw.RAMSufficient | bool)
+  ignore_errors: true
+  register: hyperv_hw_fail
+
+- name: Hyper-V | Enable Hyper-V feature
+  ansible.windows.win_optional_feature:
+    name:
+      - Microsoft-Hyper-V-All
+      - Microsoft-Hyper-V
+      - Microsoft-Hyper-V-Tools-All
+      - Microsoft-Hyper-V-Management-PowerShell
+      - Microsoft-Hyper-V-Hypervisor
+      - Microsoft-Hyper-V-Management-Clients
+    state: present
+  register: hyperv_feature_result
+  when:
+    - hyperv_edition_supported | bool
+    - hyperv_edition_fail is skipped or hyperv_edition_fail is not defined
+    - hyperv_hw_fail is skipped or hyperv_hw_fail is not defined
+  notify: Reboot after Hyper-V install
+
+- name: Hyper-V | Report result
+  ansible.builtin.debug:
+    msg: >-
+      {% if hyperv_feature_result is changed %}
+      Hyper-V has been enabled. A reboot is required to complete installation.
+      {% elif hyperv_feature_result is skipped %}
+      Hyper-V installation was skipped due to unsupported hardware or edition.
+      {% else %}
+      Hyper-V is already enabled. No changes made.
+      {% endif %}
